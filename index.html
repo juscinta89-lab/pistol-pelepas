@@ -2,171 +2,186 @@
 <html lang="ms">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>SprintFinish AI - Slit-Scan Timer</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SprintFinish - Audio Trigger Expert</title>
     <style>
         :root { --accent: #ff3e3e; --bg: #121212; }
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
-               background: var(--bg); color: white; margin: 0; overflow-x: hidden; }
+        body { font-family: sans-serif; background: var(--bg); color: white; margin: 0; text-align: center; }
         
-        header { padding: 20px; text-align: center; background: #1e1e1e; border-bottom: 2px solid var(--accent); }
+        /* Audio Monitor Style */
+        .audio-card { background: #1e1e1e; margin: 15px; padding: 15px; border-radius: 12px; border: 1px solid #333; }
+        #audioVisualizer { width: 100%; height: 60px; background: #000; border-radius: 4px; margin-bottom: 10px; }
         
-        .container { display: flex; flex-direction: column; align-items: center; padding: 10px; }
+        .timer-box { font-family: 'Courier New', monospace; font-size: 4rem; color: #00ff00; margin: 20px 0; }
         
-        #timer { font-family: monospace; font-size: 4rem; color: #00ff00; margin: 10px 0; text-shadow: 0 0 10px rgba(0,255,0,0.5); }
-        
-        .live-preview { position: relative; width: 100%; max-width: 640px; border: 1px solid #444; margin-bottom: 10px; }
-        video { width: 100%; display: block; }
-        #finishLine { position: absolute; top: 0; left: 50%; width: 2px; height: 100%; background: var(--accent); }
-
-        .result-container { width: 100%; overflow-x: auto; background: #000; margin-top: 20px; border: 2px solid #333; }
-        canvas { display: block; height: 300px; cursor: crosshair; }
-
-        .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; width: 100%; max-width: 640px; padding: 10px; }
-        button { padding: 15px; border: none; border-radius: 8px; font-weight: bold; font-size: 1rem; cursor: pointer; }
+        .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 10px; max-width: 600px; margin: 0 auto; }
+        button { padding: 15px; border-radius: 8px; border: none; font-weight: bold; cursor: pointer; font-size: 1rem; }
         #btnInit { grid-column: span 2; background: var(--accent); color: white; }
-        #btnReset { background: #444; color: white; }
-        .status { font-size: 0.8rem; color: #888; margin-top: 5px; }
+        #btnStop { background: #444; color: white; }
+        
+        /* Slider Styling */
+        .slider-container { margin: 15px 0; }
+        input[type=range] { width: 80%; height: 15px; border-radius: 5px; accent-color: var(--accent); }
+        
+        .result-container { width: 100%; overflow-x: auto; background: #000; margin-top: 20px; white-space: nowrap; }
+        canvas#photoFinish { height: 350px; border-top: 2px solid var(--accent); }
     </style>
 </head>
 <body>
 
-<header>
-    <h1>SprintFinish PWA</h1>
-    <div id="timer">00:00.000</div>
-</header>
-
-<div class="container">
-    <div class="live-preview">
-        <video id="video" autoplay playsinline muted></video>
-        <div id="finishLine"></div>
-    </div>
-
-    <div class="controls">
-        <button id="btnInit">1. AKTIFKAN KAMERA & AUX</button>
-        <button id="btnReset" onclick="location.reload()">RESET</button>
-        <div class="status" id="statusMsg">Sila tekan butang merah untuk mula.</div>
-    </div>
-
-    <div class="result-container">
-        <canvas id="photoFinishCanvas"></canvas>
+<div class="audio-card">
+    <canvas id="audioVisualizer"></canvas>
+    <div class="slider-container">
+        <label>Kepekaan (Threshold): <b id="threshVal">30</b></label><br>
+        <input type="range" id="threshold" min="1" max="100" value="30">
+        <p style="font-size: 0.7rem; color: #888;">Laras ke kiri jika bunyi pistol perlahan. Pastikan bar hijau melepasi garisan merah semasa pistol ditekan.</p>
     </div>
 </div>
 
+<div class="timer-box" id="display">00:00.000</div>
+
+<div class="controls">
+    <button id="btnInit">MULA SISTEM (Akses Kamera/Mic)</button>
+    <button id="btnStop" disabled>STOP RAKAMAN</button>
+</div>
+
+<div class="result-container">
+    <canvas id="photoFinish"></canvas>
+</div>
+
+<video id="v" style="display:none" autoplay playsinline></video>
+
 <script>
-    const video = document.getElementById('video');
-    const canvas = document.getElementById('photoFinishCanvas');
-    const ctx = canvas.getContext('2d', { alpha: false });
-    const timerDisplay = document.getElementById('timer');
-    const btnInit = document.getElementById('btnInit');
-    const statusMsg = document.getElementById('statusMsg');
-
-    let startTime = 0;
-    let isRunning = false;
-    let scanX = 0;
-    let animationId;
-
-    // Tetapan Slit-Scan
-    const SLIT_WIDTH = 2; // Lebar jalur piksel (px)
+    const v = document.getElementById('v');
+    const canvas = document.getElementById('photoFinish');
+    const ctx = canvas.getContext('2d');
+    const audioCanvas = document.getElementById('audioVisualizer');
+    const aCtx = audioCanvas.getContext('2d');
     
-    async function initApp() {
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({ 
-                video: { 
-                    facingMode: "environment",
-                    frameRate: { ideal: 60 },
-                    width: { ideal: 1280 }
-                }, 
-                audio: true 
-            });
-            
-            video.srcObject = stream;
-            statusMsg.textContent = "Menunggu isyarat AUX dari pistol...";
-            btnInit.textContent = "SEDIA / LISTENING...";
-            btnInit.style.background = "#orange";
+    let isRunning = false;
+    let isListening = false;
+    let startTime = 0;
+    let scanX = 0;
+    let threshold = 30;
 
-            setupAudioTrigger(stream);
-            setupCanvas();
-        } catch (err) {
-            alert("Ralat akses: " + err);
-        }
+    // Element UI
+    const btnInit = document.getElementById('btnInit');
+    const btnStop = document.getElementById('btnStop');
+    const threshInput = document.getElementById('threshold');
+    const display = document.getElementById('display');
+
+    threshInput.oninput = () => {
+        threshold = threshInput.value;
+        document.getElementById('threshVal').textContent = threshold;
+    };
+
+    async function init() {
+        const stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: "environment", frameRate: 60 },
+            audio: {
+                echoCancellation: false,
+                noiseSuppression: false,
+                autoGainControl: false
+            }
+        });
+        
+        v.srcObject = stream;
+        isListening = true;
+        btnInit.textContent = "SEDIA: Menunggu Bunyi...";
+        btnInit.style.background = "#555";
+        
+        setupAudio(stream);
+        setupCanvas();
     }
 
-    function setupAudioTrigger(stream) {
-        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    function setupAudio(stream) {
+        const audioCtx = new AudioContext();
         const source = audioCtx.createMediaStreamSource(stream);
         const analyser = audioCtx.createAnalyser();
         analyser.fftSize = 256;
         source.connect(analyser);
 
-        const dataArray = new Uint8Array(analyser.frequencyBinCount);
+        const bufferLength = analyser.frequencyBinCount;
+        const dataArray = new Uint8Array(bufferLength);
 
-        function detect() {
+        function drawWave() {
+            if (!isListening && !isRunning) return;
             analyser.getByteTimeDomainData(dataArray);
+
+            // Visualizer Audio
+            aCtx.fillStyle = '#000';
+            aCtx.fillRect(0, 0, audioCanvas.width, audioCanvas.height);
             
-            // Mengesan lonjakan voltan dari AUX (Pistol)
-            for (let i = 0; i < dataArray.length; i++) {
-                if (dataArray[i] > 180 || dataArray[i] < 70) { 
-                    if (!isRunning) {
-                        startRace();
-                        return;
-                    }
-                }
+            let maxVal = 0;
+            for (let i = 0; i < bufferLength; i++) {
+                let val = Math.abs(dataArray[i] - 128);
+                if (val > maxVal) maxVal = val;
             }
-            if (!isRunning) requestAnimationFrame(detect);
+
+            // Lukis bar kekuatan bunyi
+            const barWidth = (maxVal / 128) * audioCanvas.width;
+            aCtx.fillStyle = maxVal > threshold ? '#ff3e3e' : '#00ff00';
+            aCtx.fillRect(0, 0, barWidth, audioCanvas.height);
+
+            // Lukis garisan penanda threshold
+            const threshLine = (threshold / 128) * audioCanvas.width;
+            aCtx.strokeStyle = 'white';
+            aCtx.beginPath();
+            aCtx.moveTo(threshLine, 0);
+            aCtx.lineTo(threshLine, audioCanvas.height);
+            aCtx.stroke();
+
+            // Trigger Logik
+            if (maxVal > threshold && !isRunning) {
+                startRace();
+            }
+
+            requestAnimationFrame(drawWave);
         }
-        detect();
+        drawWave();
     }
 
     function setupCanvas() {
-        canvas.height = 300; // Resolusi output
-        canvas.width = window.innerWidth * 5; // Panjang canvas (boleh scroll)
-        ctx.fillStyle = "#000";
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        canvas.width = window.innerWidth * 10; 
+        canvas.height = 350;
+        ctx.fillStyle = "black";
+        ctx.fillRect(0,0, canvas.width, canvas.height);
     }
 
     function startRace() {
         isRunning = true;
+        isListening = false;
         startTime = performance.now();
-        statusMsg.textContent = "PERLUMBAAN BERMULA!";
-        statusMsg.style.color = "#00ff00";
-        renderSlitScan();
+        btnStop.disabled = false;
+        btnInit.style.display = 'none';
+        render();
     }
 
-    function renderSlitScan() {
+    function render() {
         if (!isRunning) return;
 
         const now = performance.now();
-        const elapsed = now - startTime;
+        const diff = now - startTime;
+        
+        // Timer
+        const s = Math.floor(diff / 1000);
+        const ms = Math.floor(diff % 1000).toString().padStart(3, '0');
+        display.textContent = `${Math.floor(s/60).toString().padStart(2,'0')}:${(s%60).toString().padStart(2,'0')}.${ms}`;
 
-        // 1. Update Timer Display
-        const m = Math.floor(elapsed / 60000).toString().padStart(2, '0');
-        const s = Math.floor((elapsed % 60000) / 1000).toString().padStart(2, '0');
-        const ms = Math.floor(elapsed % 1000).toString().padStart(3, '0');
-        timerDisplay.textContent = `${m}:${s}.${ms}`;
+        // Slit Scan
+        ctx.drawImage(v, v.videoWidth/2, 0, 2, v.videoHeight, scanX, 0, 2, canvas.height);
+        scanX += 2;
 
-        // 2. Slit-Scan Logic
-        // Ambil jalur tengah dari video feed
-        const sourceX = video.videoWidth / 2;
-        ctx.drawImage(
-            video, 
-            sourceX, 0, SLIT_WIDTH, video.videoHeight, // Source (tengah video)
-            scanX, 0, SLIT_WIDTH, canvas.height        // Destination (di canvas)
-        );
-
-        // Gerakkan pointer ke kanan
-        scanX += SLIT_WIDTH;
-
-        // Auto-scroll canvas container ke kanan
-        const container = document.querySelector('.result-container');
-        container.scrollLeft = scanX - container.clientWidth / 2;
-
-        animationId = requestAnimationFrame(renderSlitScan);
+        requestAnimationFrame(render);
     }
 
-    btnInit.addEventListener('click', () => {
-        initApp();
-    });
+    btnStop.onclick = () => {
+        isRunning = false;
+        btnStop.textContent = "TAMAT";
+        btnStop.style.background = "#222";
+    };
+
+    btnInit.onclick = init;
 
 </script>
 </body>
