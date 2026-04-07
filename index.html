@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SprintFinish Pro - Reset & Timestamp</title>
+    <title>SprintFinish Pro - Micro Adjust & Settings</title>
     <style>
         :root { --accent: #ff3e3e; --bg: #121212; }
         body { font-family: sans-serif; background: var(--bg); color: white; margin: 0; text-align: center; }
@@ -11,31 +11,35 @@
         .header { padding: 10px; background: #1e1e1e; border-bottom: 2px solid var(--accent); position: sticky; top: 0; z-index: 100; }
         #timer { font-family: monospace; font-size: 3.5rem; color: #00ff00; margin: 5px 0; }
         
-        .viewfinder { position: relative; width: 100%; max-width: 500px; margin: 10px auto; border: 2px solid #333; }
+        .viewfinder { position: relative; width: 100%; max-width: 400px; margin: 10px auto; border: 2px solid #333; }
         video { width: 100%; display: block; background: #000; }
         #line { position: absolute; top: 0; left: 50%; width: 2px; height: 100%; background: var(--accent); box-shadow: 0 0 5px red; }
 
+        .audio-monitor { background: #222; padding: 10px; border-radius: 8px; margin: 10px auto; max-width: 500px; }
+        canvas#audioVisualizer { width: 100%; height: 30px; background: #000; }
+
         .controls { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; padding: 10px; }
-        button { padding: 12px 20px; border: none; border-radius: 5px; font-weight: bold; cursor: pointer; min-width: 100px; }
+        button { padding: 12px 15px; border: none; border-radius: 5px; font-weight: bold; cursor: pointer; }
         #btnInit { background: var(--accent); color: white; }
-        #btnStop { background: #ffc107; color: black; display: none; }
+        #btnStop { background: #ffc107; display: none; }
         #btnReset { background: #6c757d; color: white; }
 
-        .audio-monitor { background: #222; padding: 10px; border-radius: 8px; margin: 10px auto; max-width: 500px; }
-        canvas#audioVisualizer { width: 100%; height: 40px; background: #000; }
+        /* Micro Adjustment UI */
+        .adjust-panel { background: #333; padding: 15px; margin: 10px; border-radius: 8px; display: none; border: 1px solid cyan; }
+        .adjust-btns button { background: cyan; color: black; margin: 0 5px; min-width: 50px; }
 
-        .result-area { width: 95%; margin: 15px auto; overflow-x: auto; background: #000; border: 2px solid #444; position: relative; }
-        canvas#photoFinish { display: block; height: 350px; cursor: crosshair; }
+        .result-area { width: 95%; margin: 15px auto; overflow-x: auto; background: #000; border: 2px solid #444; }
+        canvas#photoFinish { display: block; height: 300px; cursor: crosshair; }
         
-        .record-table { width: 95%; margin: 10px auto; background: #1e1e1e; border-radius: 8px; padding: 10px; }
-        .record-item { display: flex; justify-content: space-between; padding: 8px; border-bottom: 1px solid #333; }
+        .record-table { width: 95%; margin: 10px auto; background: #1e1e1e; border-radius: 8px; padding: 10px; text-align: left; }
+        .record-item { display: flex; justify-content: space-between; padding: 8px; border-bottom: 1px solid #333; color: cyan; }
     </style>
 </head>
 <body>
 
 <div class="header">
     <div id="timer">00:00.000</div>
-    <div id="status">Status: Sedia</div>
+    <div id="status" style="font-size:0.8rem; color:#aaa;">Sedia</div>
 </div>
 
 <div class="viewfinder">
@@ -54,174 +58,183 @@
 <div class="controls">
     <button id="btnInit">1. AKTIFKAN</button>
     <button id="btnStop">STOP</button>
-    <button id="btnReset">RESET</button>
+    <button id="btnReset">RESET SEMUA</button>
 </div>
 
 <div class="result-area" id="scrollContainer">
     <canvas id="photoFinish"></canvas>
 </div>
 
-<div class="record-table">
-    <h3 style="margin:0 0 10px 0; font-size: 1rem; color: var(--accent);">KEPUTUSAN RASMI (KLIK PADA IMEJ)</h3>
-    <div id="recordList">
-        <div style="color:#666">Tiada rekod masa lagi.</div>
+<div id="adjustPanel" class="adjust-panel">
+    <div style="margin-bottom:10px;"><b>Micro-Adjustment (Pelari <span id="activeRunner">0</span>)</b></div>
+    <div class="adjust-btns">
+        <button id="adjLeft">- 1px</button>
+        <button id="adjRight">+ 1px</button>
+        <button id="btnDone" style="background:white;">Simpan</button>
     </div>
+    <div id="currentTimeLabel" style="margin-top:10px; color:cyan; font-family:monospace;"></div>
+</div>
+
+<div class="record-table">
+    <h3 style="margin:0 0 10px 0; font-size: 0.9rem; border-bottom: 1px solid #444;">KEPUTUSAN MUKTAMAD</h3>
+    <div id="recordList"></div>
 </div>
 
 <script>
-    const video = document.getElementById('video');
+    const v = document.getElementById('video');
     const canvas = document.getElementById('photoFinish');
-    const ctx = canvas.getContext('2d', { alpha: false });
-    const audioCanvas = document.getElementById('audioVisualizer');
-    const aCtx = audioCanvas.getContext('2d');
+    const ctx = canvas.getContext('2d');
+    const aCanvas = document.getElementById('audioVisualizer');
+    const aCtx = aCanvas.getContext('2d');
     
-    const timerDisplay = document.getElementById('timer');
-    const recordList = document.getElementById('recordList');
-    const btnInit = document.getElementById('btnInit');
-    const btnStop = document.getElementById('btnStop');
-    const btnReset = document.getElementById('btnReset');
+    // Vars
+    let startTime, isRunning = false, isListening = false, scanX = 0;
+    let frameData = []; 
+    let results = []; // Simpan objek {x: 100, time: "00:10.123"}
+    let selectedIdx = -1;
+
+    // --- 1. SETTINGS PERSISTENCE (LocalStorage) ---
     const threshInput = document.getElementById('threshold');
-
-    let startTime = 0;
-    let isRunning = false;
-    let isListening = false;
-    let scanX = 0;
-    let frameData = []; // Menyimpan data masa [x_position] = "00:00.000"
-    let runnerCount = 0;
-
-    // --- 1. SETUP SISTEM ---
-    async function initSystem() {
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({ 
-                video: { facingMode: "environment", frameRate: 60 }, 
-                audio: { echoCancellation: false, noiseSuppression: false } 
-            });
-            video.srcObject = stream;
-            isListening = true;
-            btnInit.style.display = 'none';
-            btnStop.style.display = 'inline-block';
-            document.getElementById('status').textContent = "Mendengar isyarat pistol...";
-            
-            setupAudio(stream);
-            resetCanvas();
-        } catch (e) { alert("Ralat kamera/mic: " + e); }
+    const savedThresh = localStorage.getItem('sprint_threshold');
+    if (savedThresh) {
+        threshInput.value = savedThresh;
+        document.getElementById('threshVal').textContent = savedThresh;
     }
 
-    // --- 2. AUDIO TRIGGER ---
+    threshInput.oninput = () => {
+        document.getElementById('threshVal').textContent = threshInput.value;
+        localStorage.setItem('sprint_threshold', threshInput.value);
+    };
+
+    // --- 2. CORE SYSTEM ---
+    async function init() {
+        const stream = await navigator.mediaDevices.getUserMedia({ 
+            video: { facingMode: "environment", frameRate: 60 }, 
+            audio: { echoCancellation: false } 
+        });
+        v.srcObject = stream;
+        isListening = true;
+        document.getElementById('btnInit').style.display = 'none';
+        document.getElementById('btnStop').style.display = 'inline-block';
+        setupAudio(stream);
+        resetCanvas();
+    }
+
     function setupAudio(stream) {
         const audioCtx = new AudioContext();
         const source = audioCtx.createMediaStreamSource(stream);
         const analyser = audioCtx.createAnalyser();
-        const dataArray = new Uint8Array(analyser.frequencyBinCount);
+        const data = new Uint8Array(analyser.frequencyBinCount);
         source.connect(analyser);
 
-        function monitor() {
+        function check() {
             if (!isListening && !isRunning) return;
-            analyser.getByteTimeDomainData(dataArray);
-            
+            analyser.getByteTimeDomainData(data);
             let max = 0;
-            for(let i=0; i<dataArray.length; i++) {
-                let v = Math.abs(dataArray[i] - 128);
-                if(v > max) max = v;
+            for(let i=0; i<data.length; i++) {
+                let val = Math.abs(data[i]-128);
+                if(val > max) max = val;
             }
-
-            // Visualizer
-            aCtx.fillStyle = '#000';
-            aCtx.fillRect(0,0, audioCanvas.width, audioCanvas.height);
+            aCtx.fillStyle='#000'; aCtx.fillRect(0,0,aCanvas.width,aCanvas.height);
             aCtx.fillStyle = max > threshInput.value ? 'red' : 'green';
-            aCtx.fillRect(0, 0, (max/128)*audioCanvas.width, audioCanvas.height);
+            aCtx.fillRect(0,0,(max/128)*aCanvas.width, aCanvas.height);
 
-            if (max > threshInput.value && !isRunning && isListening) {
-                startRace();
-            }
-            requestAnimationFrame(monitor);
+            if(max > threshInput.value && isListening) startRace();
+            requestAnimationFrame(check);
         }
-        monitor();
+        check();
     }
 
-    // --- 3. LOGIK MASA & SLIT-SCAN ---
     function startRace() {
-        isRunning = true;
-        isListening = false;
+        isRunning = true; isListening = false;
         startTime = performance.now();
-        document.getElementById('status').textContent = "PERLUMBAAN BERJALAN!";
         render();
     }
 
     function render() {
-        if (!isRunning) return;
-        const now = performance.now();
-        const diff = now - startTime;
-        
-        // Timer display
-        const m = Math.floor(diff / 60000).toString().padStart(2, '0');
-        const s = Math.floor((diff % 60000) / 1000).toString().padStart(2, '0');
-        const ms = Math.floor(diff % 1000).toString().padStart(3, '0');
-        const timeStr = `${m}:${s}.${ms}`;
-        timerDisplay.textContent = timeStr;
+        if(!isRunning) return;
+        const diff = performance.now() - startTime;
+        const timeStr = formatTime(diff);
+        document.getElementById('timer').textContent = timeStr;
 
-        // Slit Scan
-        ctx.drawImage(video, video.videoWidth/2, 0, 2, video.videoHeight, scanX, 0, 2, canvas.height);
-        frameData[scanX] = timeStr; // Simpan masa pada koordinat X
-        
+        ctx.drawImage(v, v.videoWidth/2, 0, 2, v.videoHeight, scanX, 0, 2, canvas.height);
+        frameData[scanX] = timeStr;
         scanX += 2;
         document.getElementById('scrollContainer').scrollLeft = scanX;
         requestAnimationFrame(render);
     }
 
-    // --- 4. TANDA MASA PELARI (CLICK ON CANVAS) ---
+    // --- 3. MICRO ADJUSTMENT LOGIC ---
     canvas.addEventListener('click', (e) => {
-        if (isRunning) return; // Jangan tanda masa semasa perlumbaan belum tamat
+        if(isRunning) return;
         const rect = canvas.getBoundingClientRect();
         const x = Math.floor((e.clientX - rect.left) * (canvas.width / rect.width));
         
-        // Cari masa pada koordinat X tersebut
-        const timeAtX = frameData[x] || frameData[x-1] || frameData[x+1];
-        
-        if (timeAtX) {
-            runnerCount++;
-            // Lukis garisan pada imej
-            ctx.strokeStyle = "cyan";
-            ctx.lineWidth = 1;
-            ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke();
-            
-            // Lukis teks masa pada imej
-            ctx.fillStyle = "cyan";
-            ctx.font = "bold 14px Arial";
-            ctx.fillText(timeAtX, x + 5, 20);
-
-            // Tambah dalam senarai keputusan
-            if(runnerCount === 1) recordList.innerHTML = '';
-            const div = document.createElement('div');
-            div.className = 'record-item';
-            div.innerHTML = `<span>Pelari #${runnerCount}</span> <b>${timeAtX}</b>`;
-            recordList.prepend(div);
-        }
+        // Tambah pelari baru
+        const time = frameData[x] || "00:00.000";
+        results.push({ x: x, time: time });
+        selectedIdx = results.length - 1;
+        updateUI();
     });
 
-    // --- 5. FUNGSI BUTANG ---
-    btnStop.onclick = () => {
-        isRunning = false;
-        document.getElementById('status').textContent = "Tamat. Klik pada imej pelari untuk rekod masa.";
-    };
+    document.getElementById('adjLeft').onclick = () => { if(selectedIdx > -1) { results[selectedIdx].x -= 1; updateUI(); } };
+    document.getElementById('adjRight').onclick = () => { if(selectedIdx > -1) { results[selectedIdx].x += 1; updateUI(); } };
+    document.getElementById('btnDone').onclick = () => { document.getElementById('adjustPanel').style.display = 'none'; selectedIdx = -1; redrawCanvas(); };
 
-    btnReset.onclick = () => {
-        location.reload(); // Cara paling bersih untuk reset semua stream & memory
-    };
-
-    function resetCanvas() {
-        canvas.width = 12000; // Panjang rakaman (anggaran 2 minit pada 60fps)
-        canvas.height = 350;
-        ctx.fillStyle = "black";
-        ctx.fillRect(0,0, canvas.width, canvas.height);
-        scanX = 0;
-        frameData = [];
-        runnerCount = 0;
-        recordList.innerHTML = '<div style="color:#666">Tiada rekod masa lagi.</div>';
+    function updateUI() {
+        if(selectedIdx === -1) return;
+        const res = results[selectedIdx];
+        res.time = frameData[res.x] || frameData[res.x - (res.x % 2)] || "00:00.000";
+        
+        document.getElementById('adjustPanel').style.display = 'block';
+        document.getElementById('activeRunner').textContent = selectedIdx + 1;
+        document.getElementById('currentTimeLabel').textContent = "Masa Semasa: " + res.time;
+        
+        redrawCanvas();
+        updateTable();
     }
 
-    btnInit.onclick = initSystem;
-    threshInput.oninput = () => { document.getElementById('threshVal').textContent = threshInput.value; };
+    function redrawCanvas() {
+        // Redraw black background and existing scan (this is a simple version, for pro you'd save the image data)
+        // Note: In a real app, we don't clear the image, we just draw lines over it.
+        results.forEach((res, i) => {
+            ctx.strokeStyle = (i === selectedIdx) ? "yellow" : "cyan";
+            ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.moveTo(res.x, 0); ctx.lineTo(res.x, canvas.height); ctx.stroke();
+            ctx.fillStyle = ctx.strokeStyle;
+            ctx.fillText(res.time, res.x + 5, 20 + (i * 15));
+        });
+    }
+
+    function updateTable() {
+        const list = document.getElementById('recordList');
+        list.innerHTML = "";
+        results.forEach((res, i) => {
+            const div = document.createElement('div');
+            div.className = 'record-item';
+            div.innerHTML = `<span>Pelari #${i+1}</span> <b>${res.time}</b>`;
+            list.appendChild(div);
+        });
+    }
+
+    // --- UTILS ---
+    function formatTime(diff) {
+        const m = Math.floor(diff/60000).toString().padStart(2,'0');
+        const s = Math.floor((diff%60000)/1000).toString().padStart(2,'0');
+        const ms = Math.floor(diff%1000).toString().padStart(3,'0');
+        return `${m}:${s}.${ms}`;
+    }
+
+    function resetCanvas() {
+        canvas.width = 8000; canvas.height = 300;
+        ctx.fillStyle="black"; ctx.fillRect(0,0,canvas.width,canvas.height);
+        scanX = 0; frameData = []; results = [];
+        updateTable();
+    }
+
+    document.getElementById('btnInit').onclick = init;
+    document.getElementById('btnStop').onclick = () => { isRunning = false; document.getElementById('status').textContent = "Tamat. Klik imej untuk tanda pelari."; };
+    document.getElementById('btnReset').onclick = () => location.reload();
 
 </script>
 </body>
