@@ -3,38 +3,54 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SprintFinish AI - Download & Motion Detection</title>
+    <title>SprintFinish Pro - Audio Loopback</title>
     <style>
         :root { --accent: #ff3e3e; --bg: #121212; }
         body { font-family: sans-serif; background: var(--bg); color: white; margin: 0; text-align: center; }
         
-        .header { padding: 10px; background: #1e1e1e; border-bottom: 2px solid var(--accent); position: sticky; top: 0; z-index: 100; }
-        #timer { font-family: monospace; font-size: 3rem; color: #00ff00; margin: 5px 0; }
+        .header { padding: 10px; background: #1e1e1e; border-bottom: 2px solid var(--accent); }
+        #timer { font-family: monospace; font-size: 3rem; color: #00ff00; }
         
-        .viewfinder { position: relative; width: 100%; max-width: 400px; margin: 10px auto; border: 2px solid #333; }
-        video { width: 100%; display: block; background: #000; }
-        #line { position: absolute; top: 0; left: 50%; width: 2px; height: 100%; background: var(--accent); z-index: 10; }
+        .audio-box { background: #222; padding: 15px; margin: 10px; border-radius: 10px; border: 1px solid #444; }
+        .toggle-container { margin-bottom: 10px; display: flex; justify-content: center; align-items: center; gap: 10px; }
+        
+        /* Switch UI */
+        .switch { position: relative; display: inline-block; width: 50px; height: 24px; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #555; transition: .4s; border-radius: 24px; }
+        input:checked + .slider { background-color: #28a745; }
+        .slider:before { position: absolute; content: ""; height: 18px; width: 18px; left: 3px; bottom: 3px; background-color: white; transition: .4s; border-radius: 50%; }
+        input:checked + .slider:before { transform: translateX(26px); }
+
+        .viewfinder { position: relative; width: 100%; max-width: 400px; margin: 10px auto; border: 1px solid #333; }
+        video { width: 100%; display: block; }
+        #line { position: absolute; top: 0; left: 50%; width: 2px; height: 100%; background: var(--accent); }
 
         .controls { display: flex; flex-wrap: wrap; justify-content: center; gap: 5px; padding: 10px; }
-        button { padding: 10px 15px; border: none; border-radius: 5px; font-weight: bold; cursor: pointer; font-size: 0.8rem; }
+        button { padding: 12px 18px; border: none; border-radius: 5px; font-weight: bold; cursor: pointer; }
         .btn-main { background: var(--accent); color: white; }
-        .btn-sec { background: #28a745; color: white; }
-        .btn-down { background: #007bff; color: white; }
-
-        .status-bar { font-size: 0.7rem; padding: 5px; background: #222; color: #aaa; }
         
         .result-area { width: 98%; margin: 10px auto; overflow-x: auto; background: #000; border: 1px solid #444; }
         canvas#photoFinish { display: block; height: 300px; }
-
-        .record-table { width: 95%; margin: 10px auto; background: #1e1e1e; border-radius: 8px; padding: 10px; text-align: left; }
-        .record-item { display: flex; justify-content: space-between; padding: 5px; border-bottom: 1px solid #333; font-size: 0.9rem; }
     </style>
 </head>
 <body>
 
 <div class="header">
     <div id="timer">00:00.000</div>
-    <div class="status-bar" id="status">Sistem Offline</div>
+</div>
+
+<div class="audio-box">
+    <div class="toggle-container">
+        <span>🔈 Monitor Audio (Speaker)</span>
+        <label class="switch">
+            <input type="checkbox" id="audioLoopback">
+            <span class="slider"></span>
+        </label>
+    </div>
+    <div style="font-size: 0.7rem; color: #888;">
+        Amaran: Gunakan earphone/speaker luaran untuk mengelakkan 'feedback' (bunyi berdengung).
+    </div>
 </div>
 
 <div class="viewfinder">
@@ -43,10 +59,9 @@
 </div>
 
 <div class="controls">
-    <button id="btnInit" class="btn-main">1. AKTIFKAN SISTEM</button>
-    <button id="btnStop" class="btn-main" style="display:none; background:#ffc107; color:black;">STOP</button>
-    <button id="btnDownloadImg" class="btn-down">MUAT TURUN FOTO</button>
-    <button id="btnDownloadData" class="btn-down">MUAT TURUN DATA</button>
+    <button id="btnInit" class="btn-main">AKTIFKAN SISTEM</button>
+    <button id="btnStop" style="display:none; background:#ffc107;">STOP</button>
+    <button id="btnDownload" style="background:#007bff; color:white;">SIMPAN FOTO</button>
     <button onclick="location.reload()" style="background:#555; color:white;">RESET</button>
 </div>
 
@@ -54,46 +69,49 @@
     <canvas id="photoFinish"></canvas>
 </div>
 
-<div class="record-table">
-    <div id="recordList"></div>
-</div>
-
-<canvas id="motionCanvas" style="display:none;"></canvas>
-
 <script>
     const v = document.getElementById('video');
     const canvas = document.getElementById('photoFinish');
     const ctx = canvas.getContext('2d');
-    const mCanvas = document.getElementById('motionCanvas');
-    const mCtx = mCanvas.getContext('2d');
+    const loopbackToggle = document.getElementById('audioLoopback');
 
-    let startTime, isRunning = false, isListening = false, isDetectingMotion = false;
-    let scanX = 0, frameData = [], results = [];
-    let lastFrameData = null;
+    let audioCtx, source, analyser, loopbackNode;
+    let startTime, isRunning = false, isListening = false, scanX = 0, frameData = [];
 
-    // --- 1. SETTINGS & INIT ---
     async function init() {
         const stream = await navigator.mediaDevices.getUserMedia({ 
             video: { facingMode: "environment", frameRate: 60 }, 
-            audio: { echoCancellation: false } 
+            audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } 
         });
+        
         v.srcObject = stream;
         isListening = true;
         document.getElementById('btnInit').style.display = 'none';
         document.getElementById('btnStop').style.display = 'inline-block';
-        document.getElementById('status').textContent = "MENUNGGU PISTOL...";
+        
         setupAudio(stream);
         resetCanvas();
     }
 
-    // --- 2. AUDIO TRIGGER ---
     function setupAudio(stream) {
-        const audioCtx = new AudioContext();
-        const source = audioCtx.createMediaStreamSource(stream);
-        const analyser = audioCtx.createAnalyser();
-        const data = new Uint8Array(analyser.frequencyBinCount);
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        source = audioCtx.createMediaStreamSource(stream);
+        analyser = audioCtx.createAnalyser();
         source.connect(analyser);
 
+        // Fungsi Loopback (Output ke Speaker)
+        loopbackToggle.onchange = () => {
+            if (loopbackToggle.checked) {
+                // Sambungkan input terus ke destination (speaker)
+                source.connect(audioCtx.destination);
+            } else {
+                // Putuskan sambungan ke speaker
+                source.disconnect(audioCtx.destination);
+                source.connect(analyser); // Kekalkan sambungan ke analyser untuk trigger
+            }
+        };
+
+        const data = new Uint8Array(analyser.frequencyBinCount);
         function check() {
             if (!isListening) return;
             analyser.getByteTimeDomainData(data);
@@ -102,97 +120,28 @@
                 let val = Math.abs(data[i]-128);
                 if(val > max) max = val;
             }
-            // Gunakan threshold 30 (boleh dilaras via localStorage jika perlu)
+            // Trigger pada threshold 30
             if(max > 30) {
                 isListening = false;
                 startTime = performance.now();
-                isDetectingMotion = true; // Pistol bunyi, sekarang tunggu gerakan di kamera
-                document.getElementById('status').textContent = "PISTOL DIBUNYIKAN! MENUNGGU GERAKAN DI GARISAN...";
-                detectMotion();
+                isRunning = true;
+                render();
             }
             requestAnimationFrame(check);
         }
         check();
     }
 
-    // --- 3. MOTION DETECTION (Image Detection) ---
-    function detectMotion() {
-        if (!isDetectingMotion) return;
-
-        mCanvas.width = v.videoWidth / 8; // Kecilkan saiz untuk kelajuan
-        mCanvas.height = v.videoHeight / 8;
-        mCtx.drawImage(v, 0, 0, mCanvas.width, mCanvas.height);
-        const currentFrame = mCtx.getImageData(0, 0, mCanvas.width, mCanvas.height);
-
-        if (lastFrameData) {
-            let diff = 0;
-            for (let i = 0; i < currentFrame.data.length; i += 4) {
-                diff += Math.abs(currentFrame.data[i] - lastFrameData.data[i]);
-            }
-            // Jika perbezaan pixel > threshold, bermakna ada pelari sampai
-            if (diff > 5000) { 
-                isDetectingMotion = false;
-                isRunning = true;
-                document.getElementById('status').textContent = "MERAKAM PENAMAT...";
-                render();
-                return;
-            }
-        }
-        lastFrameData = currentFrame;
-        
-        // Kemaskini timer walaupun belum rakam slit-scan
-        const diffTime = performance.now() - startTime;
-        document.getElementById('timer').textContent = formatTime(diffTime);
-        
-        requestAnimationFrame(detectMotion);
-    }
-
-    // --- 4. RENDER SLIT-SCAN ---
     function render() {
         if(!isRunning) return;
         const diff = performance.now() - startTime;
-        const timeStr = formatTime(diff);
-        document.getElementById('timer').textContent = timeStr;
-
+        document.getElementById('timer').textContent = formatTime(diff);
         ctx.drawImage(v, v.videoWidth/2, 0, 2, v.videoHeight, scanX, 0, 2, canvas.height);
-        frameData[scanX] = timeStr;
+        frameData[scanX] = formatTime(diff);
         scanX += 2;
         document.getElementById('scrollContainer').scrollLeft = scanX;
         requestAnimationFrame(render);
     }
-
-    // --- 5. MUAT TURUN FUNGSI ---
-    document.getElementById('btnDownloadImg').onclick = () => {
-        const link = document.createElement('a');
-        link.download = `PhotoFinish_${new Date().getTime()}.png`;
-        link.href = canvas.toDataURL();
-        link.click();
-    };
-
-    document.getElementById('btnDownloadData').onclick = () => {
-        let content = "Keputusan Perlumbaan\n===================\n";
-        results.forEach((r, i) => { content += `Pelari ${i+1}: ${r.time}\n`; });
-        const blob = new Blob([content], {type: 'text/plain'});
-        const link = document.createElement('a');
-        link.download = `Keputusan_${new Date().getTime()}.txt`;
-        link.href = URL.createObjectURL(blob);
-        link.click();
-    };
-
-    // --- 6. KLIK UNTUK MASA ---
-    canvas.addEventListener('click', (e) => {
-        if(isRunning || isDetectingMotion) return;
-        const rect = canvas.getBoundingClientRect();
-        const x = Math.floor((e.clientX - rect.left) * (canvas.width / rect.width));
-        const time = frameData[x] || frameData[x-1] || "00:00.000";
-        
-        results.push({ x, time });
-        ctx.strokeStyle = "cyan";
-        ctx.strokeRect(x, 0, 1, canvas.height);
-        ctx.fillStyle = "cyan";
-        ctx.fillText(time, x + 5, 20 + (results.length * 10));
-        updateTable();
-    });
 
     function formatTime(diff) {
         const m = Math.floor(diff/60000).toString().padStart(2,'0');
@@ -204,18 +153,16 @@
     function resetCanvas() {
         canvas.width = 10000; canvas.height = 300;
         ctx.fillStyle="black"; ctx.fillRect(0,0,canvas.width,canvas.height);
-        scanX = 0; frameData = []; results = [];
-    }
-
-    function updateTable() {
-        const list = document.getElementById('recordList');
-        list.innerHTML = results.map((r, i) => `<div class="record-item"><span>Pelari ${i+1}</span><b>${r.time}</b></div>`).join('');
+        scanX = 0;
     }
 
     document.getElementById('btnInit').onclick = init;
-    document.getElementById('btnStop').onclick = () => {
-        isRunning = false; isDetectingMotion = false;
-        document.getElementById('status').textContent = "TAMAT. Sila klik imej & muat turun.";
+    document.getElementById('btnStop').onclick = () => isRunning = false;
+    document.getElementById('btnDownload').onclick = () => {
+        const link = document.createElement('a');
+        link.download = 'PhotoFinish.png';
+        link.href = canvas.toDataURL();
+        link.click();
     };
 </script>
 </body>
