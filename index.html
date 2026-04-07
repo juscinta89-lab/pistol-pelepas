@@ -2,165 +2,280 @@
 <html lang="ms">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SprintFinish Pro - Audio Loopback</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>SprintFinish AI Pro v5</title>
     <style>
-        :root { --accent: #ff3e3e; --bg: #121212; }
-        body { font-family: sans-serif; background: var(--bg); color: white; margin: 0; text-align: center; }
+        :root { --accent: #ff3e3e; --bg: #121212; --panel: #1e1e1e; }
+        body { font-family: -apple-system, sans-serif; background: var(--bg); color: white; margin: 0; overflow-x: hidden; }
         
-        .header { padding: 10px; background: #1e1e1e; border-bottom: 2px solid var(--accent); }
-        #timer { font-family: monospace; font-size: 3rem; color: #00ff00; }
+        /* Header & Timer */
+        header { padding: 10px; background: var(--panel); border-bottom: 2px solid var(--accent); position: sticky; top: 0; z-index: 100; }
+        #timer { font-family: 'Courier New', monospace; font-size: 3.5rem; color: #00ff00; margin: 5px 0; font-weight: bold; }
+        .status-bar { font-size: 0.75rem; color: #aaa; text-transform: uppercase; letter-spacing: 1px; }
+
+        /* Viewfinder */
+        .viewfinder { position: relative; width: 100%; max-width: 500px; margin: 10px auto; border: 2px solid #333; background: #000; }
+        video { width: 100%; display: block; filter: brightness(1.1); }
+        #finishLine { position: absolute; top: 0; left: 50%; width: 2px; height: 100%; background: var(--accent); box-shadow: 0 0 8px red; z-index: 5; }
+
+        /* Audio & Settings Panel */
+        .settings-panel { background: var(--panel); margin: 10px; padding: 15px; border-radius: 12px; border: 1px solid #333; }
+        .audio-viz { width: 100%; height: 30px; background: #000; border-radius: 4px; margin-bottom: 10px; }
+        .control-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; font-size: 0.9rem; }
         
-        .audio-box { background: #222; padding: 15px; margin: 10px; border-radius: 10px; border: 1px solid #444; }
-        .toggle-container { margin-bottom: 10px; display: flex; justify-content: center; align-items: center; gap: 10px; }
+        /* Buttons */
+        .btn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 10px; max-width: 500px; margin: 0 auto; }
+        button { padding: 14px; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 0.9rem; transition: 0.2s; }
+        #btnStart { grid-column: span 2; background: var(--accent); color: white; }
+        #btnStop { grid-column: span 2; background: #ffc107; color: black; display: none; }
+        .btn-download { background: #007bff; color: white; }
+        .btn-reset { background: #444; color: white; }
+
+        /* Photo Finish Area */
+        .result-container { width: 98%; margin: 15px auto; overflow-x: auto; background: #000; border: 2px solid #444; position: relative; }
+        canvas#photoFinish { display: block; height: 350px; cursor: crosshair; }
+
+        /* Micro Adjustment */
+        .adjust-box { background: #2c2c2c; padding: 15px; margin: 10px; border-radius: 10px; display: none; border: 1px solid cyan; }
+        .adj-btn { background: cyan; color: black; padding: 10px 20px; margin: 5px; }
+
+        /* Record Table */
+        .records { width: 95%; margin: 10px auto; text-align: left; background: #1a1a1a; padding: 10px; border-radius: 8px; }
+        .record-entry { display: flex; justify-content: space-between; padding: 8px; border-bottom: 1px solid #333; color: cyan; font-family: monospace; }
         
-        /* Switch UI */
-        .switch { position: relative; display: inline-block; width: 50px; height: 24px; }
+        /* Toggle Switch */
+        .switch { position: relative; display: inline-block; width: 40px; height: 20px; }
         .switch input { opacity: 0; width: 0; height: 0; }
-        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #555; transition: .4s; border-radius: 24px; }
+        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #444; border-radius: 20px; transition: .4s; }
+        .slider:before { position: absolute; content: ""; height: 14px; width: 14px; left: 3px; bottom: 3px; background-color: white; border-radius: 50%; transition: .4s; }
         input:checked + .slider { background-color: #28a745; }
-        .slider:before { position: absolute; content: ""; height: 18px; width: 18px; left: 3px; bottom: 3px; background-color: white; transition: .4s; border-radius: 50%; }
-        input:checked + .slider:before { transform: translateX(26px); }
-
-        .viewfinder { position: relative; width: 100%; max-width: 400px; margin: 10px auto; border: 1px solid #333; }
-        video { width: 100%; display: block; }
-        #line { position: absolute; top: 0; left: 50%; width: 2px; height: 100%; background: var(--accent); }
-
-        .controls { display: flex; flex-wrap: wrap; justify-content: center; gap: 5px; padding: 10px; }
-        button { padding: 12px 18px; border: none; border-radius: 5px; font-weight: bold; cursor: pointer; }
-        .btn-main { background: var(--accent); color: white; }
-        
-        .result-area { width: 98%; margin: 10px auto; overflow-x: auto; background: #000; border: 1px solid #444; }
-        canvas#photoFinish { display: block; height: 300px; }
+        input:checked + .slider:before { transform: translateX(20px); }
     </style>
 </head>
 <body>
 
-<div class="header">
+<header>
+    <div id="status" class="status-bar">SISTEM SEDIA</div>
     <div id="timer">00:00.000</div>
+</header>
+
+<div class="viewfinder">
+    <video id="v" autoplay playsinline muted></video>
+    <div id="finishLine"></div>
 </div>
 
-<div class="audio-box">
-    <div class="toggle-container">
+<div class="settings-panel">
+    <canvas id="audioViz" class="audio-viz"></canvas>
+    <div class="control-row">
+        <span>Threshold Bunyi: <b id="tVal">30</b></span>
+        <input type="range" id="threshold" min="5" max="100" value="30" style="width:60%">
+    </div>
+    <div class="control-row">
         <span>🔈 Monitor Audio (Speaker)</span>
         <label class="switch">
-            <input type="checkbox" id="audioLoopback">
+            <input type="checkbox" id="loopback">
             <span class="slider"></span>
         </label>
     </div>
-    <div style="font-size: 0.7rem; color: #888;">
-        Amaran: Gunakan earphone/speaker luaran untuk mengelakkan 'feedback' (bunyi berdengung).
-    </div>
 </div>
 
-<div class="viewfinder">
-    <video id="video" autoplay playsinline muted></video>
-    <div id="line"></div>
+<div class="btn-grid">
+    <button id="btnStart">1. AKTIFKAN SISTEM</button>
+    <button id="btnStop">STOP RAKAMAN</button>
+    <button id="btnDownImg" class="btn-download">SIMPAN FOTO</button>
+    <button onclick="location.reload()" class="btn-reset">RESET</button>
 </div>
 
-<div class="controls">
-    <button id="btnInit" class="btn-main">AKTIFKAN SISTEM</button>
-    <button id="btnStop" style="display:none; background:#ffc107;">STOP</button>
-    <button id="btnDownload" style="background:#007bff; color:white;">SIMPAN FOTO</button>
-    <button onclick="location.reload()" style="background:#555; color:white;">RESET</button>
+<div id="adjustPanel" class="adjust-box">
+    <div style="margin-bottom:10px;">Pelari #<span id="runID">0</span>: <span id="runTime" style="color:cyan"></span></div>
+    <button class="adj-btn" id="adjL">- 1px</button>
+    <button class="adj-btn" id="adjR">+ 1px</button>
+    <button onclick="this.parentElement.style.display='none'" style="background:white;">OK</button>
 </div>
 
-<div class="result-area" id="scrollContainer">
+<div class="result-container" id="scrollArea">
     <canvas id="photoFinish"></canvas>
 </div>
 
+<div class="records">
+    <div id="recordList"></div>
+</div>
+
+<canvas id="motionCanvas" style="display:none;"></canvas>
+
 <script>
-    const v = document.getElementById('video');
+    const v = document.getElementById('v');
     const canvas = document.getElementById('photoFinish');
-    const ctx = canvas.getContext('2d');
-    const loopbackToggle = document.getElementById('audioLoopback');
+    const ctx = canvas.getContext('2d', { alpha: false });
+    const aViz = document.getElementById('audioViz');
+    const aCtx = aViz.getContext('2d');
+    
+    let startTime, isRunning = false, isListening = false, isMotionActive = false;
+    let scanX = 0, frameTimes = [], results = [], selectedIdx = -1;
+    let lastFrameData = null;
+    let audioCtx, sourceNode, analyserNode;
 
-    let audioCtx, source, analyser, loopbackNode;
-    let startTime, isRunning = false, isListening = false, scanX = 0, frameData = [];
+    // --- SETTINGS (Local Storage) ---
+    const tInput = document.getElementById('threshold');
+    const loopCheck = document.getElementById('loopback');
+    tInput.value = localStorage.getItem('pref_thresh') || 30;
+    document.getElementById('tVal').textContent = tInput.value;
 
-    async function init() {
-        const stream = await navigator.mediaDevices.getUserMedia({ 
-            video: { facingMode: "environment", frameRate: 60 }, 
-            audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } 
-        });
-        
-        v.srcObject = stream;
-        isListening = true;
-        document.getElementById('btnInit').style.display = 'none';
-        document.getElementById('btnStop').style.display = 'inline-block';
-        
-        setupAudio(stream);
-        resetCanvas();
+    tInput.oninput = () => {
+        document.getElementById('tVal').textContent = tInput.value;
+        localStorage.setItem('pref_thresh', tInput.value);
+    };
+
+    // --- INISIALISASI ---
+    async function startSystem() {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ 
+                video: { facingMode: "environment", frameRate: 60 },
+                audio: { echoCancellation: false, noiseSuppression: false }
+            });
+            v.srcObject = stream;
+            isListening = true;
+            document.getElementById('btnStart').style.display = 'none';
+            document.getElementById('btnStop').style.display = 'block';
+            document.getElementById('status').textContent = "MENUNGGU ISYARAT PISTOL...";
+            setupAudio(stream);
+            initCanvas();
+        } catch (e) { alert("Sila benarkan kamera & mikrofon!"); }
     }
 
     function setupAudio(stream) {
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        source = audioCtx.createMediaStreamSource(stream);
-        analyser = audioCtx.createAnalyser();
-        source.connect(analyser);
+        sourceNode = audioCtx.createMediaStreamSource(stream);
+        analyserNode = audioCtx.createAnalyser();
+        sourceNode.connect(analyserNode);
 
-        // Fungsi Loopback (Output ke Speaker)
-        loopbackToggle.onchange = () => {
-            if (loopbackToggle.checked) {
-                // Sambungkan input terus ke destination (speaker)
-                source.connect(audioCtx.destination);
-            } else {
-                // Putuskan sambungan ke speaker
-                source.disconnect(audioCtx.destination);
-                source.connect(analyser); // Kekalkan sambungan ke analyser untuk trigger
-            }
-        };
+        const data = new Uint8Array(analyserNode.frequencyBinCount);
+        
+        function monitor() {
+            if (!isListening && !isRunning && !isMotionActive) return;
+            analyserNode.getByteTimeDomainData(data);
+            
+            // Audio Monitoring (Speaker)
+            if(loopCheck.checked) sourceNode.connect(audioCtx.destination);
+            else try { sourceNode.disconnect(audioCtx.destination); } catch(e){}
 
-        const data = new Uint8Array(analyser.frequencyBinCount);
-        function check() {
-            if (!isListening) return;
-            analyser.getByteTimeDomainData(data);
             let max = 0;
             for(let i=0; i<data.length; i++) {
-                let val = Math.abs(data[i]-128);
-                if(val > max) max = val;
+                let v = Math.abs(data[i]-128);
+                if(v > max) max = v;
             }
-            // Trigger pada threshold 30
-            if(max > 30) {
+
+            // Draw Viz
+            aCtx.fillStyle='#000'; aCtx.fillRect(0,0,aViz.width,aViz.height);
+            aCtx.fillStyle= max > tInput.value ? 'red' : '#00ff00';
+            aCtx.fillRect(0,0,(max/128)*aViz.width, aViz.height);
+
+            if(max > tInput.value && isListening) {
                 isListening = false;
                 startTime = performance.now();
-                isRunning = true;
-                render();
+                isMotionActive = true;
+                document.getElementById('status').textContent = "PISTOL DETECTED! MENUNGGU GERAKAN...";
+                detectMotion();
             }
-            requestAnimationFrame(check);
+            requestAnimationFrame(monitor);
         }
-        check();
+        monitor();
     }
 
-    function render() {
+    // --- MOTION DETECTION ---
+    function detectMotion() {
+        if (!isMotionActive) return;
+        const mCanvas = document.getElementById('motionCanvas');
+        const mCtx = mCanvas.getContext('2d');
+        mCanvas.width = 80; mCanvas.height = 60;
+        mCtx.drawImage(v, 0,0,80,60);
+        const curr = mCtx.getImageData(0,0,80,60);
+
+        if (lastFrameData) {
+            let diff = 0;
+            for(let i=0; i<curr.data.length; i+=4) diff += Math.abs(curr.data[i]-lastFrameData.data[i]);
+            if(diff > 4000) {
+                isMotionActive = false; isRunning = true;
+                document.getElementById('status').textContent = "MERAKAM PENAMAT...";
+                renderSlit();
+                return;
+            }
+        }
+        lastFrameData = curr;
+        document.getElementById('timer').textContent = formatTime(performance.now() - startTime);
+        requestAnimationFrame(detectMotion);
+    }
+
+    // --- SLIT SCAN RENDER ---
+    function renderSlit() {
         if(!isRunning) return;
         const diff = performance.now() - startTime;
-        document.getElementById('timer').textContent = formatTime(diff);
+        const timeStr = formatTime(diff);
+        document.getElementById('timer').textContent = timeStr;
+
         ctx.drawImage(v, v.videoWidth/2, 0, 2, v.videoHeight, scanX, 0, 2, canvas.height);
-        frameData[scanX] = formatTime(diff);
+        frameTimes[scanX] = timeStr;
         scanX += 2;
-        document.getElementById('scrollContainer').scrollLeft = scanX;
-        requestAnimationFrame(render);
+        document.getElementById('scrollArea').scrollLeft = scanX;
+        requestAnimationFrame(renderSlit);
     }
 
-    function formatTime(diff) {
-        const m = Math.floor(diff/60000).toString().padStart(2,'0');
-        const s = Math.floor((diff%60000)/1000).toString().padStart(2,'0');
-        const ms = Math.floor(diff%1000).toString().padStart(3,'0');
+    // --- MICRO ADJUSTMENT & MARKING ---
+    canvas.addEventListener('click', (e) => {
+        if(isRunning || isMotionActive) return;
+        const rect = canvas.getBoundingClientRect();
+        const x = Math.floor((e.clientX - rect.left) * (canvas.width / rect.width));
+        results.push({ x: x, time: frameTimes[x] || "00:00.000" });
+        selectedIdx = results.length - 1;
+        showAdjust();
+    });
+
+    function showAdjust() {
+        const res = results[selectedIdx];
+        res.time = frameTimes[res.x] || frameTimes[res.x-1] || "00:00.000";
+        document.getElementById('adjustPanel').style.display = 'block';
+        document.getElementById('runID').textContent = selectedIdx + 1;
+        document.getElementById('runTime').textContent = res.time;
+        drawMarkers();
+    }
+
+    document.getElementById('adjL').onclick = () => { results[selectedIdx].x -= 1; showAdjust(); };
+    document.getElementById('adjR').onclick = () => { results[selectedIdx].x += 1; showAdjust(); };
+
+    function drawMarkers() {
+        // Redraw labels on table
+        const list = document.getElementById('recordList');
+        list.innerHTML = results.map((r, i) => `<div class="record-entry"><span>Pelari #${i+1}</span><b>${r.time}</b></div>`).join('');
+        
+        // Draw lines on canvas
+        results.forEach((r, i) => {
+            ctx.strokeStyle = (i === selectedIdx) ? "yellow" : "cyan";
+            ctx.lineWidth = 1;
+            ctx.beginPath(); ctx.moveTo(r.x, 0); ctx.lineTo(r.x, canvas.height); ctx.stroke();
+        });
+    }
+
+    // --- UTILS ---
+    function formatTime(d) {
+        const m = Math.floor(d/60000).toString().padStart(2,'0');
+        const s = Math.floor((d%60000)/1000).toString().padStart(2,'0');
+        const ms = Math.floor(d%1000).toString().padStart(3,'0');
         return `${m}:${s}.${ms}`;
     }
 
-    function resetCanvas() {
-        canvas.width = 10000; canvas.height = 300;
+    function initCanvas() {
+        canvas.width = 12000; canvas.height = 350;
         ctx.fillStyle="black"; ctx.fillRect(0,0,canvas.width,canvas.height);
-        scanX = 0;
     }
 
-    document.getElementById('btnInit').onclick = init;
-    document.getElementById('btnStop').onclick = () => isRunning = false;
-    document.getElementById('btnDownload').onclick = () => {
+    document.getElementById('btnStart').onclick = startSystem;
+    document.getElementById('btnStop').onclick = () => {
+        isRunning = false; isMotionActive = false;
+        document.getElementById('status').textContent = "TAMAT. KLIK PADA IMEJ UNTUK MASA.";
+    };
+    document.getElementById('btnDownImg').onclick = () => {
         const link = document.createElement('a');
-        link.download = 'PhotoFinish.png';
+        link.download = `PhotoFinish_${Date.now()}.png`;
         link.href = canvas.toDataURL();
         link.click();
     };
