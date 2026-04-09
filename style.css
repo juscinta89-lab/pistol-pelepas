@@ -1,0 +1,93 @@
+body {
+  margin: 0;
+  font-family: 'Segoe UI', sans-serif;
+  background: #0f172a;
+  color: white;
+}
+
+.container {
+  max-width: 420px;
+  margin: auto;
+  padding: 20px;
+}
+
+.title {
+  text-align: center;
+  margin-bottom: 20px;
+}
+
+/* CARD */
+.card {
+  background: #1e293b;
+  padding: 15px;
+  border-radius: 16px;
+  margin-bottom: 15px;
+  box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+}
+
+.center {
+  text-align: center;
+}
+
+.row {
+  display: flex;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+/* INPUT */
+input {
+  width: 100%;
+  padding: 12px;
+  border-radius: 10px;
+  border: none;
+  background: #0f172a;
+  color: white;
+}
+
+/* BUTTON */
+.btn {
+  flex: 1;
+  padding: 12px;
+  border-radius: 10px;
+  border: none;
+  font-weight: bold;
+  cursor: pointer;
+  transition: 0.2s;
+}
+
+.btn:hover {
+  transform: scale(1.05);
+}
+
+/* COLORS */
+.primary {
+  background: #3b82f6;
+}
+
+.secondary {
+  background: #64748b;
+}
+
+.start {
+  background: #22c55e;
+  font-size: 18px;
+}
+
+/* TIMER */
+.timer-box {
+  text-align: center;
+  margin: 20px 0;
+}
+
+#timer {
+  font-size: 48px;
+  font-weight: bold;
+  color: #22c55e;
+}
+
+/* VIDEO */
+video {
+  width: 100%;
+  border-radius: 12px;
+}
